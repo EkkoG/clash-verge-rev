@@ -388,10 +388,7 @@ pub async fn read_profile_file(index: String) -> CmdResult<String> {
     let item = {
         let profiles = Config::profiles().await;
         let profiles_ref = profiles.latest_arc();
-        PrfItem {
-            file: profiles_ref.get_item(&index).stringify_err()?.file.to_owned(),
-            ..Default::default()
-        }
+        profiles_ref.get_item(&index).stringify_err()?.clone()
     };
     let data = item.read_file().await.stringify_err()?;
     Ok(data)

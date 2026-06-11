@@ -267,6 +267,46 @@ export async function patchVergeConfig(payload: IVergeConfig) {
   return invoke<void>('patch_verge_config', { payload })
 }
 
+export async function generateAgeKeypair(name?: string) {
+  return invoke<IVergeAgeKey>('generate_age_keypair', { name })
+}
+
+export async function importAgeSecretKey(
+  name: string | undefined,
+  secretKey: string,
+) {
+  return invoke<IVergeAgeKey>('import_age_secret_key', {
+    name,
+    secretKey,
+  })
+}
+
+export async function exportAgeSecretKey(keyId: string) {
+  return invoke<string>('export_age_secret_key', { keyId })
+}
+
+export async function deleteAgeKey(keyId: string) {
+  return invoke<void>('delete_age_key', { keyId })
+}
+
+export async function listAgeKeyBindings(keyId: string) {
+  return invoke<IAgeKeyBindingProfile[]>('list_age_key_bindings', { keyId })
+}
+
+export async function bindAgeKeyToProfiles(
+  keyId: string,
+  profileIds: string[],
+) {
+  return invoke<void>('bind_age_key_to_profiles', { keyId, profileIds })
+}
+
+export async function unbindAgeKeyFromProfiles(
+  keyId: string,
+  profileIds: string[],
+) {
+  return invoke<void>('unbind_age_key_from_profiles', { keyId, profileIds })
+}
+
 export async function getSystemProxy() {
   return invoke<{
     enable: boolean

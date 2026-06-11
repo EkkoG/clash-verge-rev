@@ -257,6 +257,19 @@ pub struct IVerge {
 
     /// 启用外部控制器
     pub enable_external_controller: Option<bool>,
+
+    /// Reusable age keypairs that profiles can reference by ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age_keys: Option<Vec<IVergeAgeKey>>,
+}
+
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct IVergeAgeKey {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub public_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub created_at: Option<usize>,
 }
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
@@ -449,6 +462,7 @@ impl IVerge {
             enable_dns_settings: Some(false),
             home_cards: None,
             enable_external_controller: Some(false),
+            age_keys: None,
             ..Self::default()
         }
     }
@@ -544,6 +558,7 @@ impl IVerge {
         patch!(webdav_url);
         patch!(webdav_username);
         patch!(webdav_password);
+        patch!(age_keys);
         #[cfg(target_os = "macos")]
         patch!(enable_tray_speed);
         // patch!(enable_tray_icon);

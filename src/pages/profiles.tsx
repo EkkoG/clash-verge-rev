@@ -19,6 +19,7 @@ import {
   LocalFireDepartmentRounded,
   RefreshRounded,
   TextSnippetOutlined,
+  VpnKeyRounded,
 } from '@mui/icons-material'
 import { Box, Button, Divider, Grid, IconButton, Stack } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
@@ -43,6 +44,10 @@ import {
 } from 'tauri-plugin-mihomo-api'
 
 import { BasePage, BaseStyledTextField, DialogRef } from '@/components/base'
+import {
+  AgeKeyManagerViewer,
+  AgeKeyManagerViewerRef,
+} from '@/components/profile/age-key-manager-viewer'
 import { ProfileItem } from '@/components/profile/profile-item'
 import { ProfileMore } from '@/components/profile/profile-more'
 import {
@@ -273,6 +278,7 @@ const ProfilePage = () => {
   })
 
   const viewerRef = useRef<ProfileViewerRef>(null)
+  const ageKeyManagerRef = useRef<AgeKeyManagerViewerRef>(null)
   const configRef = useRef<DialogRef>(null)
 
   // distinguish type
@@ -815,6 +821,15 @@ const ProfilePage = () => {
 
               <IconButton
                 size="small"
+                color="inherit"
+                title="Age Key Management"
+                onClick={() => ageKeyManagerRef.current?.open()}
+              >
+                <VpnKeyRounded />
+              </IconButton>
+
+              <IconButton
+                size="small"
                 color="primary"
                 title={t('profiles.page.actions.reactivate')}
                 onClick={() => onEnhance(true)}
@@ -1057,6 +1072,7 @@ const ProfilePage = () => {
           }
         }}
       />
+      <AgeKeyManagerViewer ref={ageKeyManagerRef} />
       <ConfigViewer ref={configRef} />
     </BasePage>
   )

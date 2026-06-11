@@ -301,6 +301,20 @@ interface IProfileOption {
   rules?: string
   proxies?: string
   groups?: string
+  age_key_id?: string
+}
+
+interface IVergeAgeKey {
+  id?: string
+  name?: string
+  public_key?: string
+  secret_key?: string
+  created_at?: number
+}
+
+interface IAgeKeyBindingProfile {
+  uid: string
+  name: string
 }
 
 interface IProfilesConfig {
@@ -980,6 +994,7 @@ interface IVergeConfig {
   proxy_layout_column?: number
   test_list?: IVergeTestItem[]
   webdav_url?: string
+  age_keys?: IVergeAgeKey[]
   webdav_username?: string
   webdav_password?: string
   home_cards?: Record<string, boolean>

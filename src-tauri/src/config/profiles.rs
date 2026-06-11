@@ -149,16 +149,7 @@ impl IProfiles {
             if item.file.is_none() {
                 bail!("the file should not be null");
             }
-
-            let file = item
-                .file
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("file field is required when file_data is provided"))?;
-            let path = dirs::app_profiles_dir()?.join(file.as_str());
-
-            fs::write(&path, file_data.as_bytes())
-                .await
-                .with_context(|| format!("failed to write to file \"{file}\""))?;
+            item.save_file(file_data).await?;
         }
 
         if self.current.is_none() && (item.itype == Some("remote".into()) || item.itype == Some("local".into())) {
@@ -255,11 +246,12 @@ impl IProfiles {
                         // the file must exists
                         each.file = Some(file.clone());
 
-                        let path = dirs::app_profiles_dir()?.join(file.as_str());
-
-                        fs::write(&path, file_data.as_bytes())
-                            .await
-                            .with_context(|| format!("failed to write to file \"{file}\""))?;
+                        let writer = PrfItem {
+                            file: Some(file),
+                            option: each.option.clone(),
+                            ..Default::default()
+                        };
+                        writer.save_file(file_data).await?;
                     }
 
                     break;
@@ -324,11 +316,9 @@ impl IProfiles {
         match (self.current.as_ref(), self.items.as_ref()) {
             (Some(current), Some(items)) => {
                 if let Some(item) = items.iter().find(|e| e.uid.as_ref() == Some(current)) {
-                    let file_path = match item.file.as_ref() {
-                        Some(file) => dirs::app_profiles_dir()?.join(file.as_str()),
-                        None => bail!("failed to get the file field"),
-                    };
-                    return help::read_mapping(&file_path).await;
+                    let content = item.read_file().await?;
+                    return serde_yaml_ng::from_str::<Mapping>(&content)
+                        .with_context(|| format!("failed to parse current profile \"uid:{current}\""));
                 }
                 bail!("failed to find the current profile \"uid:{current}\"");
             }

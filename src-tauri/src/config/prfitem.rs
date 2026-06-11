@@ -1,5 +1,5 @@
 use crate::{
-    config::profiles,
+    config::{maybe_decrypt_profile_content, maybe_encrypt_profile_content, profiles},
     utils::{
         dirs, help,
         network::{NetworkManager, ProxyType},
@@ -122,6 +122,9 @@ pub struct PrfOption {
     pub proxies: Option<String>,
 
     pub groups: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age_key_id: Option<String>,
 }
 
 impl PrfOption {
@@ -141,6 +144,7 @@ impl PrfOption {
                 result.rules = b_ref.rules.clone().or(result.rules);
                 result.proxies = b_ref.proxies.clone().or(result.proxies);
                 result.groups = b_ref.groups.clone().or(result.groups);
+                result.age_key_id = b_ref.age_key_id.clone().or(result.age_key_id);
                 result.timeout_seconds = b_ref.timeout_seconds.or(result.timeout_seconds);
                 Some(result)
             }
@@ -201,6 +205,7 @@ impl PrfItem {
         let mut rules = opt_ref.and_then(|o| o.rules.clone());
         let mut proxies = opt_ref.and_then(|o| o.proxies.clone());
         let mut groups = opt_ref.and_then(|o| o.groups.clone());
+        let age_key_id = opt_ref.and_then(|o| o.age_key_id.clone());
 
         if merge.is_none() {
             let merge_item = &mut Self::from_merge(None)?;
@@ -227,6 +232,15 @@ impl PrfItem {
             profiles::profiles_append_item_safe(groups_item).await?;
             groups = groups_item.uid.clone();
         }
+        let prepared_file_data = match file_data {
+            Some(content) => Some(
+                maybe_decrypt_profile_content(content.as_str(), age_key_id.as_deref())
+                    .await
+                    .context("failed to decode local profile content")?
+                    .into(),
+            ),
+            None => None,
+        };
         Ok(Self {
             uid: Some(uid),
             itype: Some("local".into()),
@@ -243,11 +257,12 @@ impl PrfItem {
                 rules,
                 proxies,
                 groups,
+                age_key_id,
                 ..PrfOption::default()
             }),
             home: None,
             updated: Some(chrono::Local::now().timestamp() as usize),
-            file_data: Some(file_data.unwrap_or_else(|| tmpl::ITEM_LOCAL.into())),
+            file_data: Some(prepared_file_data.unwrap_or_else(|| tmpl::ITEM_LOCAL.into())),
         })
     }
 
@@ -271,6 +286,7 @@ impl PrfItem {
         let mut rules = option.and_then(|o| o.rules.clone());
         let mut proxies = option.and_then(|o| o.proxies.clone());
         let mut groups = option.and_then(|o| o.groups.clone());
+        let age_key_id = option.and_then(|o| o.age_key_id.clone());
 
         // 选择代理类型
         let proxy_type = if self_proxy {
@@ -379,13 +395,12 @@ impl PrfItem {
         let name = name
             .map(|s| s.to_owned())
             .unwrap_or_else(|| filename.map(|s| s.into()).unwrap_or_else(|| "Remote File".into()));
-        let data = resp.text_with_charset()?;
-
-        // process the charset "UTF-8 with BOM"
-        let data = data.trim_start_matches('\u{feff}');
+        let data = maybe_decrypt_profile_content(resp.text_with_charset()?, age_key_id.as_deref())
+            .await
+            .context("failed to decode remote profile content")?;
 
         // check the data whether the valid yaml format
-        let yaml = serde_yaml_ng::from_str::<Mapping>(data).context("the remote profile data is invalid yaml")?;
+        let yaml = serde_yaml_ng::from_str::<Mapping>(&data).context("the remote profile data is invalid yaml")?;
 
         if !yaml.contains_key("proxies") && !yaml.contains_key("proxy-providers") {
             bail!("profile does not contain `proxies` or `proxy-providers`");
@@ -434,6 +449,12 @@ impl PrfItem {
                 proxies,
                 groups,
                 allow_auto_update,
+                user_agent,
+                with_proxy: Some(with_proxy),
+                self_proxy: Some(self_proxy),
+                timeout_seconds: Some(timeout),
+                danger_accept_invalid_certs: Some(accept_invalid_certs),
+                age_key_id,
                 ..PrfOption::default()
             }),
             home,
@@ -534,7 +555,12 @@ impl PrfItem {
             .ok_or_else(|| anyhow::anyhow!("could not find the file"))?;
         let path = dirs::app_profiles_dir()?.join(file.as_str());
         let content = fs::read_to_string(path).await.context("failed to read the file")?;
-        Ok(content.into())
+        maybe_decrypt_profile_content(
+            content.as_str(),
+            self.option.as_ref().and_then(|option| option.age_key_id.as_deref()),
+        )
+        .await
+        .map(Into::into)
     }
 
     /// save the file data
@@ -544,7 +570,12 @@ impl PrfItem {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("could not find the file"))?;
         let path = dirs::app_profiles_dir()?.join(file.as_str());
-        fs::write(path, data.as_bytes())
+        let content = maybe_encrypt_profile_content(
+            data.as_str(),
+            self.option.as_ref().and_then(|option| option.age_key_id.as_deref()),
+        )
+        .await?;
+        fs::write(path, content.as_bytes())
             .await
             .context("failed to save the file")
     }

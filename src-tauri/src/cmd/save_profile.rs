@@ -29,50 +29,63 @@ pub async fn save_profile_file(index: String, file_data: Option<String>) -> CmdR
     };
 
     // 在异步操作前获取必要元数据并释放锁
-    let (rel_path, is_merge_file, is_script_file, affects_runtime) = {
+    let (item, rel_path, is_merge_file, is_script_file, affects_runtime, uses_age_encryption) = {
         let profiles = Config::profiles().await;
         let profiles_guard = profiles.latest_arc();
-        let item = profiles_guard.get_item(&index).stringify_err()?;
+        let item = profiles_guard.get_item(&index).stringify_err()?.clone();
         let is_merge = item.itype.as_ref().is_some_and(|t| t == "merge");
         let path = item.file.clone().ok_or("file field is null")?;
         let is_script = item.itype.as_ref().is_some_and(|t| t == "script") || path.ends_with(".js");
         let affects_runtime = profile_affects_runtime(&profiles_guard, &index);
-        (path, is_merge, is_script, affects_runtime)
+        let uses_age = item
+            .option
+            .as_ref()
+            .and_then(|option| option.age_key_id.as_ref())
+            .is_some();
+        (item, path, is_merge, is_script, affects_runtime, uses_age)
     };
 
     // 读取原始内容（在释放profiles_guard后进行）
-    let original_content = PrfItem {
-        file: Some(rel_path.clone()),
-        ..Default::default()
-    }
-    .read_file()
-    .await
-    .stringify_err()?;
+    let original_content = item.read_file().await.stringify_err()?;
 
     let profiles_dir = dirs::app_profiles_dir().stringify_err()?;
     let file_path = profiles_dir.join(rel_path.as_str());
-    let file_path_str = file_path.to_string_lossy().to_string();
 
     // 保存新的配置文件
-    fs::write(&file_path, &file_data).await.stringify_err()?;
+    item.save_file(file_data.clone()).await.stringify_err()?;
+
+    let validation_path = if uses_age_encryption {
+        let validate_path =
+            std::env::temp_dir().join(format!("clash-verge-age-validate-{}-{}", index, rel_path.as_str()));
+        fs::write(&validate_path, file_data.as_bytes()).await.stringify_err()?;
+        Some(validate_path)
+    } else {
+        None
+    };
+    let validation_target = validation_path.as_ref().unwrap_or(&file_path);
+    let validation_target_str = validation_target.to_string_lossy().to_string();
 
     logging!(
         info,
         Type::Config,
         "[cmd配置save] 开始验证配置文件: {}, 是否为merge文件: {}",
-        file_path_str,
+        validation_target_str,
         is_merge_file
     );
 
     let changes_applied = handle_saved_profile_file(
-        &file_path_str,
-        &file_path,
+        &validation_target_str,
+        &item,
         &original_content,
         is_merge_file,
         is_script_file,
         affects_runtime,
     )
     .await?;
+
+    if let Some(validate_path) = validation_path {
+        let _ = fs::remove_file(validate_path).await;
+    }
 
     if changes_applied.is_valid()
         && let Some(trigger) = backup_trigger
@@ -83,8 +96,8 @@ pub async fn save_profile_file(index: String, file_data: Option<String>) -> CmdR
     Ok(changes_applied)
 }
 
-async fn restore_original(file_path: &std::path::Path, original_content: &str) -> Result<(), String> {
-    fs::write(file_path, original_content).await.stringify_err()
+async fn restore_original(item: &PrfItem, original_content: &str) -> Result<(), String> {
+    item.save_file(original_content.to_owned().into()).await.stringify_err()
 }
 
 fn profile_affects_runtime(profiles: &IProfiles, index: &str) -> bool {
@@ -110,7 +123,7 @@ fn profile_affects_runtime(profiles: &IProfiles, index: &str) -> bool {
 
 async fn handle_saved_profile_file(
     file_path_str: &str,
-    file_path: &std::path::Path,
+    item: &PrfItem,
     original_content: &str,
     is_merge_file: bool,
     is_script_file: bool,
@@ -138,13 +151,13 @@ async fn handle_saved_profile_file(
         }
         Ok(outcome) => {
             logging!(warn, Type::Config, "[cmd配置save] 文件验证失败: {}", outcome);
-            restore_original(file_path, original_content).await?;
+            restore_original(item, original_content).await?;
             handle_validation_notice(&outcome, target, file_type);
             return Ok(outcome);
         }
         Err(e) => {
             logging!(error, Type::Config, "[cmd配置save] 验证过程发生错误: {}", e);
-            restore_original(file_path, original_content).await?;
+            restore_original(item, original_content).await?;
             return Err(e.to_string().into());
         }
     }
@@ -165,13 +178,13 @@ async fn handle_saved_profile_file(
         }
         Ok(outcome) => {
             logging!(warn, Type::Config, "[cmd配置save] 运行时配置应用失败: {}", outcome);
-            restore_original(file_path, original_content).await?;
+            restore_original(item, original_content).await?;
             handle_validation_notice(&outcome, ValidationNoticeTarget::Runtime, "运行时配置");
             Ok(outcome)
         }
         Err(err) => {
             logging!(error, Type::Config, "[cmd配置save] 运行时配置应用错误: {}", err);
-            restore_original(file_path, original_content).await?;
+            restore_original(item, original_content).await?;
             Err(err.to_string().into())
         }
     }

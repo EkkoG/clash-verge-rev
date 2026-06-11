@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 
 import { BaseDialog, Switch } from '@/components/base'
 import { useProfiles } from '@/hooks/use-profiles'
+import { useVerge } from '@/hooks/use-verge'
 import { createProfile, patchProfile } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
 import { version } from '@root/package.json'
@@ -41,6 +42,7 @@ export function ProfileViewer({ onChange, ref }: ProfileViewerProps) {
   const [openType, setOpenType] = useState<'new' | 'edit'>('new')
   const [loading, setLoading] = useState(false)
   const { profiles } = useProfiles()
+  const { verge } = useVerge()
 
   // file input
   const fileDataRef = useRef<string | null>(null)
@@ -108,6 +110,9 @@ export function ProfileViewer({ onChange, ref }: ProfileViewerProps) {
         }
         if (option?.user_agent === '') {
           option.user_agent = undefined
+        }
+        if (option?.age_key_id === '') {
+          option.age_key_id = undefined
         }
 
         const name = form.name || `${form.type} file`
@@ -214,6 +219,7 @@ export function ProfileViewer({ onChange, ref }: ProfileViewerProps) {
   const formType = watch('type')
   const isRemote = formType === 'remote'
   const isLocal = formType === 'local'
+  const ageKeys = verge?.age_keys ?? []
 
   return (
     <BaseDialog
@@ -344,6 +350,26 @@ export function ProfileViewer({ onChange, ref }: ProfileViewerProps) {
                 },
               }}
             />
+          )}
+        />
+      )}
+
+      {(isRemote || isLocal) && (
+        <Controller
+          name="option.age_key_id"
+          control={control}
+          render={({ field }) => (
+            <FormControl size="small" fullWidth sx={{ mt: 1, mb: 1 }}>
+              <InputLabel>Age Encryption</InputLabel>
+              <Select {...field} label="Age Encryption">
+                <MenuItem value="">Disabled</MenuItem>
+                {ageKeys.map((key) => (
+                  <MenuItem key={key.id} value={key.id}>
+                    {key.name || key.public_key}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           )}
         />
       )}
